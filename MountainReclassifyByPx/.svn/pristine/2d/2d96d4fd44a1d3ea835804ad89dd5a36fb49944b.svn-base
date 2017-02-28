@@ -1,0 +1,143 @@
+package com.xdc;
+
+import java.io.EOFException;
+import java.io.IOException;
+
+import org.apache.hadoop.fs.FSDataInputStream;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.ArrayWritable;
+import org.apache.hadoop.io.BytesWritable;
+import org.apache.hadoop.io.FloatWritable;
+import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.mapreduce.TaskAttemptContext;
+import org.apache.hadoop.mapreduce.lib.input.FileSplit;
+import org.apache.hadoop.mapreduce.InputSplit;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.mapreduce.RecordReader;
+
+/**
+ * Return a single record (filename, "") where the filename is taken from
+ * the file split.
+ */
+public class BinaryRecordReader extends RecordReader<LongWritable, BytesWritable> {
+  private FSDataInputStream inputStream = null;
+  private long start,end,pos;
+  private Configuration conf = null;
+  private FileSplit fileSplit = null;
+  private LongWritable key = new LongWritable();
+  private BytesWritable value = new BytesWritable();
+  private boolean processed = false;
+  private short TILE_SIZE;
+  public BinaryRecordReader() throws IOException {
+  }
+
+  /*关闭文件流
+   * */
+  public void close() {
+    try {
+      if(inputStream != null)
+        inputStream.close();
+    } catch (IOException e) {
+      // TODO Auto-generated catch block
+      e.printStackTrace();
+    }
+  }
+
+  /*
+   * 获取处理进度
+   **/
+  public float getProgress() {
+    return ((processed == true)? 1.0f : 0.0f);
+  }
+
+  /*
+   * 获取当前的Key
+   * */
+  public LongWritable getCurrentKey() throws IOException,
+  InterruptedException {
+    // TODO Auto-generated method stub
+    return key;
+  }
+
+  /* 获取当前的Value
+   * */
+  public BytesWritable getCurrentValue() throws IOException,InterruptedException {
+    // TODO Auto-generated method stub
+    return value;
+  }
+
+  /*
+   * 进行初始化工作，打开文件流，根据分块信息设置起始位置和长度等等
+   * */
+  public void initialize(InputSplit inputSplit, TaskAttemptContext context)
+      throws IOException, InterruptedException {
+    // TODO Auto-generated method stub
+    fileSplit = (FileSplit)inputSplit;
+    conf = context.getConfiguration();
+   
+   long tempStart=fileSplit.getStart();
+    this.start =( tempStart==0?tempStart+60:tempStart );
+    this.end = fileSplit.getStart() + fileSplit.getLength();
+   /* this.start = fileSplit.getStart();
+    this.end = fileSplit.getStart() + fileSplit.getLength();*/
+
+    try{
+	      Path path = fileSplit.getPath();
+	      FileSystem fs = path.getFileSystem(conf);
+	      this.inputStream = fs.open(path);
+	      inputStream.seek(this.start);
+	      this.pos = this.start;
+	      
+	     TILE_SIZE = 1;
+	  /*    FSDataInputStream fsis = fs.open(new Path("hdfs://192.168.1.200:9000/result/headMsg"));
+	      HeadMsg headMsg = new HeadMsg(fsis);
+	      TILE_SIZE = headMsg.getTILE_SIZE();
+	      fsis.close();*/
+      
+    }	catch(IOException e)	{
+      e.printStackTrace();
+    }
+  }
+
+  /*生成下一个键值对
+   **/
+  public boolean nextKeyValue() throws IOException, InterruptedException {
+    // TODO Auto-generated method stub
+	 
+    if(this.pos < this.end) 
+    {
+   
+    	   int size= 4*TILE_SIZE*TILE_SIZE;
+	      key.set(this.pos/size);
+	      byte[] bytes = new byte[size];
+	      inputStream.read(bytes);
+	      byte[] bytes_temp = new byte[1024];
+	     /* int i = 0;
+	        while(i<size/1024){
+	        	if(i==0){
+	        	   inputStream.read(bytes,0,1024);
+	        	}else{
+	        	   inputStream.read(bytes_temp);
+	        	   for(int j =0;j<1024;j++){
+	        		   bytes[j+i*1024] = bytes_temp[j];
+	        	    }
+	        	 }
+	         	i++;
+	        }*/
+	      
+	      BytesWritable bw = new BytesWritable(bytes);
+          value.set(bw);
+          this.pos = inputStream.getPos();
+  	      return true;
+    
+
+    } 
+    else
+    {
+      processed = true;
+      return false;
+    }
+  }
+  
+}

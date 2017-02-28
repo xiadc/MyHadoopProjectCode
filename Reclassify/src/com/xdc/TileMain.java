@@ -1,0 +1,233 @@
+package com.xdc;
+
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.net.URI;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.zip.ZipInputStream;
+
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FSDataInputStream;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.BytesWritable;
+import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.compress.CompressionCodec;
+import org.apache.hadoop.io.compress.GzipCodec;
+import org.apache.hadoop.mapred.lib.InputSampler;
+import org.apache.hadoop.mapred.lib.InputSampler.RandomSampler;
+import org.apache.hadoop.mapred.lib.TotalOrderPartitioner;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.mapreduce.Reducer;
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+
+//压缩瓦片文件l
+public class TileMain {	
+  public static class MyMapper extends Mapper<LongWritable, BytesWritable, LongWritable, BytesWritable>{
+	public static ArrayList<ClassifyMsg> classifyMsgList;
+	//public static long[] sumList;
+	public static ArrayList<ClassifyMsg> getClassifyMsgList(String classify_inputPath) throws IOException{
+		// String classify_inputPath = "/yuanzu_for_China";
+		 Configuration conf = new Configuration();   
+	    ArrayList<ClassifyMsg> list = new ArrayList<ClassifyMsg>(); 
+	    //String classify_inputPath ="hdfs://192.168.1.202:9000/RasTileTest/tileZip";
+	    FSDataInputStream fsis = null;
+	    try{  
+  		      FileSystem fs = FileSystem.get(URI.create("hdfs://master:9000/"), conf);
+		      fsis = fs.open(new Path("hdfs://master:9000/user/xiadc/yuanzuMsg/"+classify_inputPath));
+		  	   byte[] bytes = new byte[4096];
+			   fsis.read(bytes);
+			   String s= new  String(bytes, "utf-8");
+			   s=s.replaceAll("( )( )+","");// 去掉字符中间多于2个的空格
+			   s =s.trim();//去掉首尾多余的空格
+		      String[] yuanzu =s.split(" ");//按空格分割元组
+		   //   sumList = new long[yuanzu.length+1];//求和数组共有元组个数加一项，多的一项为为补充0.0f的
+		      for(int i = 0; i <yuanzu.length;i++){
+		    	  yuanzu[i] = yuanzu[i].replace("(", " ");
+		    	  yuanzu[i] = yuanzu[i].replace(")", " ");
+		    	  yuanzu[i] = yuanzu[i].trim();
+		    	  String[] px = yuanzu[i].split(",");
+		    	  if(px.length!=3){
+		    		  System.out.println("参数格式不正确！");
+		    		   return null;
+		    	  }
+		    	  float min = Float.parseFloat(px[0]);
+		    	  float max = Float.parseFloat(px[1]);
+		    	  float level = Float.parseFloat(px[2]);
+		    	  list.add( new ClassifyMsg(min,max,level));
+		      }
+	      }	catch(IOException e)	{
+	           e.printStackTrace();
+	    }finally{
+	    	try {
+				fsis.close();
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+	    }	
+	    return list;
+	}
+	static{
+		 try {
+			classifyMsgList = getClassifyMsgList("yuanzu_for_Hubei");
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+	}
+	public void map(LongWritable key, BytesWritable value, Context context
+        ) throws IOException, InterruptedException {
+    	//瓦片解压**************************************************   
+    	   byte []bytes = value.copyBytes();
+    	   byte []b = null;
+			ByteArrayInputStream bis = new ByteArrayInputStream(bytes);
+			ZipInputStream  zip = new ZipInputStream(bis);
+			while (zip.getNextEntry() != null) {			
+			    byte[] buf = new byte[1024];
+			    int num = -1;
+			    ByteArrayOutputStream baos = new ByteArrayOutputStream();		    
+			    while ((num = zip.read(buf, 0, buf.length)) != -1) {     
+			    	   baos.write(buf, 0, num);
+			     }    
+			    b = baos.toByteArray();
+			    baos.flush();
+			    baos.close();
+			}
+		   zip.close();
+		   bis.close();
+    	  // b = bytes;
+		//******************************************************
+		//瓦片中找到最大值	
+			float current_float;
+		   int temp;
+			int length = b.length;//字节数组长度 
+			float[] tile = new float[length/4];
+			float[] change_tile = new float[length/4];		
+			
+            for(int j =0;j<length;j+=4){
+           	    temp=(0xff & b[j]) | (0xff00 & (b[j+1] << 8)) | (0xff0000 & (b[j+2] << 16)) | (0xff000000 & (b[j+3] << 24));
+           	    current_float=Float.intBitsToFloat(temp);
+           	    tile[j/4] = current_float;
+           	    change_tile[j/4] = current_float;//当前值先初始化为当前float数值
+           	    if(change_tile[j/4]==1.70141E38f){ //如果chang_tile[j/4]的值是无效值，则无用值赋为0      	    
+        	            change_tile[j/4] = 0.0f;
+        	            //sumList[classifyMsgList.size()]+=1L;//最后无用项计数
+        	           continue;
+                      }
+           	    for(int i =0; i<classifyMsgList.size();i++){//区间循环
+           	    	if(i ==0){//第一个区间
+		           	       if(current_float>=classifyMsgList.get(i).getMin()&&current_float<=classifyMsgList.get(i).getMax()){	          
+		           	    	   	change_tile[j/4] = classifyMsgList.get(i).getLevel();//赋值
+		           	    	   	//sumList[i]+=1L;//计数
+		           	    	   	break;
+		           	       }
+           	    	}else{//非第一个区间
+           	    	      if(current_float>classifyMsgList.get(i).getMin()&&current_float<=classifyMsgList.get(i).getMax()){	           		    
+	           	    	        change_tile[j/4] = classifyMsgList.get(i).getLevel();
+	           	    	       // sumList[i]+=1L;//计数
+	           	    	        break;
+	           	                }
+           	    	   }
+           	     }
+           	    
+           }
+            int temp_data;
+            byte[] result_bytes = new byte[length];
+      	    for(int i = 0;i<length;i+=4){
+      	    	   temp_data = Float.floatToIntBits(change_tile[i/4]);
+      	    	   result_bytes[i] = (byte) (temp_data & 0xff);  
+      	    	   result_bytes[i+1] = (byte) ((temp_data & 0xff00) >> 8);  
+      	    	   result_bytes[i+2] = (byte) ((temp_data & 0xff0000) >> 16);  
+      	    	   result_bytes[i+3] = (byte) ((temp_data & 0xff000000) >> 24);     	    	     
+      	    }           
+            context.write(key,new BytesWritable(result_bytes));                             
+        }
+  }
+
+  public static class MyReducer extends Reducer<LongWritable,BytesWritable,LongWritable,BytesWritable> { 
+    
+    public void reduce(LongWritable key, Iterable<BytesWritable> values, 
+        Context context) throws IOException, InterruptedException { 
+            	Iterator<BytesWritable> ite = values.iterator(); 
+            	BytesWritable bw = ite.next();
+            	context.write(key, bw);     
+    }
+  }
+
+  public static void main(String[] args) throws Exception {
+	    
+	    Configuration conf = new Configuration();         	   
+    /**  
+    * JobConf：map/reduce的job配置类，向hadoop框架描述map-reduce执行的工作  
+    * 构造方法：JobConf()、JobConf(Class exampleClass)、JobConf(Configuration conf)等  
+    */    
+	 if(args.length !=5){
+			System.out.println("参数个数不匹配，应为5");
+			return;
+	 }	  
+  
+	 if("y".equals(args[3])){
+		conf.set("mapreduce.map.output.compress","true");
+	 }
+	 if("y".equals(args[4])){
+	   conf.setBoolean("mapreduce.output.fileoutputformat.compress",true);
+	   conf.setClass("mapreduce.output.fileoutputformat.compress.codec",GzipCodec.class, CompressionCodec.class);	 
+	 }
+	 conf.setBoolean("dfs.support.append", true);
+	 //Job job = new Job(conf, "Reclassify");//Job(Configuration conf, String jobName) 设置job名称
+	 Job job =Job.getInstance(conf, "Reclassify");
+	 job.setJarByClass(TileMain.class);  
+	 
+	 job.setMapperClass(MyMapper.class); //为job设置Mapper类   
+	 job.setCombinerClass(MyReducer.class); //为job设置Combiner类    
+	 job.setReducerClass(MyReducer.class); //为job设置Reduce类     
+	 
+	 job.setOutputKeyClass(LongWritable.class);        //设置输出key的类型  
+	 job.setOutputValueClass(BytesWritable.class);//  设置输出value的类型 
+	 job.setInputFormatClass(TileInputFormat.class);
+	 job.setOutputFormatClass(TileOutputFormat.class);
+	 int tasksNum = Integer.parseInt(args[2]);
+	 job.setNumReduceTasks(tasksNum);
+	 String s1 = args[0];
+	 //String s2 = args[1];
+	 String inputPath1="hdfs://master:9000"+s1;
+	 //String inputPath2="hdfs://192.168.1.202:9000/"+s2;
+	// Path partitionFile = new Path("hdfs://192.168.1.200:9000/partitionFile");
+	 String s2 = args[1];
+    String outputPath="hdfs://master:9000"+s2;
+	 TileInputFormat.addInputPath(job, new Path(inputPath1)); 
+	 //FileInputFormat.addInputPath(job, new Path(inputPath2)); 
+	 TileOutputFormat.setOutputPath(job, new Path(outputPath));//为map-reduce任务设置OutputFormat实现类  设置输出路径
+	 long startMili=System.currentTimeMillis();// 当前时间对应的毫秒数
+	 if(tasksNum>1){
+	 job.setPartitionerClass(TotalOrderPartitioner.class);
+	 // RandomSampler第一个参数表示key会被选中的概率，第二个参数是一个选取samples数，第三个参数是最大读取input splits数
+	 RandomSampler<LongWritable, BytesWritable> sampler = new InputSampler.RandomSampler<LongWritable, BytesWritable>(0.1, 5000, 20);
+	 
+	 
+	 // 设置partition file全路径到conf  
+  //  TotalOrderPartitioner.setPartitionFile(conf, partitionFile);     
+     // 写partition file到mapreduce.totalorderpartitioner.path  
+    InputSampler.writePartitionFile(job, sampler); 
+    String partitionFile = TotalOrderPartitioner.getPartitionFile(conf);
+    URI partitionUri= new URI(partitionFile);//？？
+    job.addCacheArchive(partitionUri);//添加一个档案进行本地化
+	 }
+	
+	// MyMapper.classifyMsgList = MyMapper.getClassifyMsgList("/yuanzu_for_China");
+	 boolean state= job.waitForCompletion(true);
+	 long endMili=System.currentTimeMillis();
+	 System.out.println("总耗时为："+(endMili-startMili)+"毫秒");
+	 
+	/* for(int i = 0;i<MyMapper.sumList.length;i++){
+		      System.out.println(MyMapper.sumList[i]);
+	 }*/
+	 
+	 System.exit(state? 0 : 1);  
+  }
+}
