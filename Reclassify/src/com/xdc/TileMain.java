@@ -199,7 +199,7 @@ public class TileMain {
 	 //String inputPath2="hdfs://192.168.1.202:9000/"+s2;
 	// Path partitionFile = new Path("hdfs://192.168.1.200:9000/partitionFile");
 	 String s2 = args[1];
-    String outputPath="hdfs://master:9000"+s2;
+         String outputPath="hdfs://master:9000"+s2;
 	 TileInputFormat.addInputPath(job, new Path(inputPath1)); 
 	 //FileInputFormat.addInputPath(job, new Path(inputPath2)); 
 	 TileOutputFormat.setOutputPath(job, new Path(outputPath));//为map-reduce任务设置OutputFormat实现类  设置输出路径
@@ -211,12 +211,12 @@ public class TileMain {
 	 
 	 
 	 // 设置partition file全路径到conf  
-  //  TotalOrderPartitioner.setPartitionFile(conf, partitionFile);     
-     // 写partition file到mapreduce.totalorderpartitioner.path  
-    InputSampler.writePartitionFile(job, sampler); 
-    String partitionFile = TotalOrderPartitioner.getPartitionFile(conf);
-    URI partitionUri= new URI(partitionFile);//？？
-    job.addCacheArchive(partitionUri);//添加一个档案进行本地化
+         //  TotalOrderPartitioner.setPartitionFile(conf, partitionFile);     
+        // 写partition file到mapreduce.totalorderpartitioner.path  
+        InputSampler.writePartitionFile(job, sampler); 
+        String partitionFile = TotalOrderPartitioner.getPartitionFile(conf);
+        URI partitionUri= new URI(partitionFile);//？？
+        job.addCacheArchive(partitionUri);//添加一个档案进行本地化
 	 }
 	
 	// MyMapper.classifyMsgList = MyMapper.getClassifyMsgList("/yuanzu_for_China");
