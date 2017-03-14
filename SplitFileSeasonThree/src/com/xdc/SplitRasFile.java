@@ -2,6 +2,7 @@ package com.xdc;
 
 import java.io.DataOutputStream;
 import java.io.FileOutputStream;
+import java.io.BufferedOutputStream;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.util.ArrayList;
@@ -105,7 +106,7 @@ public class SplitRasFile {
 	 */
 	@SuppressWarnings("resource")
 	private void split(short START,short TILE_SIZE,String DES_PATH,String rowKey,ArrayList<Integer> invaildTileNoList) throws IOException{//切分
-	       long startPX = Long.MAX_VALUE;
+	           long startPX = Long.MAX_VALUE;
 		   int byteSize = TILE_SIZE*4;
 		   byte[] bytes = new byte[byteSize];
 		   
@@ -115,11 +116,11 @@ public class SplitRasFile {
 		   
 		   myDataOutputStream mydos = null;
 		   DataOutputStream dos =null;
-			FileOutputStream fos = null;
+		   BufferedOutputStream bos = null;
 			
-		   fos = new  FileOutputStream(DES_PATH +"/tile");	   
-			dos = new DataOutputStream(fos);//输出流
-			mydos = new myDataOutputStream(dos);
+		   fos =new BufferedOutputStream(new  FileOutputStream(DES_PATH +"/tile"));	   
+		   dos = new DataOutputStream(bos);//输出流
+		   mydos = new myDataOutputStream(dos);
 			//无效块标记，true代表是无效块，false代表有效块
 			boolean label; 
 				for(int x=0;x<ROW_NUM;x++){//x，y代表逻辑上的第x行，第y列的数据块
