@@ -118,7 +118,7 @@ public class SplitRasFile {
 		   DataOutputStream dos =null;
 		   BufferedOutputStream bos = null;
 			
-		   fos =new BufferedOutputStream(new  FileOutputStream(DES_PATH +"/tile"));	   
+		   bos =new BufferedOutputStream(new  FileOutputStream(DES_PATH +"/tile"));	   
 		   dos = new DataOutputStream(bos);//输出流
 		   mydos = new myDataOutputStream(dos);
 			//无效块标记，true代表是无效块，false代表有效块
